@@ -8,7 +8,7 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey);
 
-export const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+export const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
 export async function generateChatResponse(prompt: string, context: string): Promise<string> {
   try {

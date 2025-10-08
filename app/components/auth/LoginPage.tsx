@@ -1,13 +1,20 @@
 'use client';
 
-
 import { motion } from 'framer-motion';
 import { Auth } from '@supabase/auth-ui-react';
 import { ThemeSupa } from '@supabase/auth-ui-shared';
 import { supabase } from '@/app/lib/supabase';
 import { Brain } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 export function LoginPage() {
+  // Handle the redirectTo safely with window object
+  const [redirectUrl, setRedirectUrl] = useState<string | undefined>(undefined);
+  
+  useEffect(() => {
+    // Set redirectUrl after component mounts to avoid SSR issues
+    setRedirectUrl(`${window.location.origin}/dashboard`);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
@@ -34,27 +41,29 @@ export function LoginPage() {
 
           {/* Auth component */}
           <div className="auth-container">
-            <Auth
-              supabaseClient={supabase}
-              appearance={{
-                theme: ThemeSupa,
-                variables: {
-                  default: {
-                    colors: {
-                      brand: '#7c3aed',
-                      brandAccent: '#6d28d9',
+            {redirectUrl && (
+              <Auth
+                supabaseClient={supabase}
+                appearance={{
+                  theme: ThemeSupa,
+                  variables: {
+                    default: {
+                      colors: {
+                        brand: '#7c3aed',
+                        brandAccent: '#6d28d9',
+                      },
                     },
                   },
-                },
-                className: {
-                  container: 'auth-container',
-                  button: 'auth-button',
-                  input: 'auth-input',
-                },
-              }}
-              providers={['google', 'github']}
-              redirectTo={`${window.location.origin}/dashboard`}
-            />
+                  className: {
+                    container: 'auth-container',
+                    button: 'auth-button',
+                    input: 'auth-input',
+                  },
+                }}
+                providers={['google', 'github']}
+                redirectTo={redirectUrl}
+              />
+            )}
           </div>
         </div>
 

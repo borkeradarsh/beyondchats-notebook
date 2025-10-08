@@ -94,80 +94,54 @@ export default function NewNotebookPage() {
 
       console.log('Notebook created:', notebook);
 
-      // Step 2: Process and create document entries for each PDF
+      // Step 2: Process and upload each PDF with proper RAG processing
       const documentPromises = uploadedFiles.map(async (fileData) => {
-        // For now, we'll create document entries without actual file upload
-        // In a production app, you'd upload to Supabase Storage first
-        
-        // Extract basic text content (placeholder)
-        const mockContent = `Document: ${fileData.name}
+        try {
+          // Upload and process the document with RAG (PDF parsing is done in the backend)
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          const formData = new FormData();
+          formData.append('file', fileData.file);
+          formData.append('notebookId', notebook.id);
+          
+          const uploadResponse = await fetch('/api/upload', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session?.access_token}`
+            },
+            body: formData // Send as FormData, not JSON
+          });
 
-EXECUTIVE SUMMARY
-This document contains comprehensive information about various topics relevant to academic and professional research. The content has been carefully structured to provide valuable insights and actionable information.
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json();
+            throw new Error(errorData.error || `Failed to upload document: ${uploadResponse.statusText}`);
+          }
 
-MAIN CONTENT SECTIONS:
+          const uploadResult = await uploadResponse.json();
+          console.log(`Uploaded and processed ${fileData.name}:`, uploadResult);
 
-1. INTRODUCTION
-This PDF document serves as a comprehensive resource covering multiple domains of knowledge. It includes detailed analysis, research findings, and practical applications that can be referenced for academic, professional, or personal learning purposes.
-
-2. KEY FINDINGS AND INSIGHTS
-• Advanced concepts and methodologies are thoroughly explained
-• Practical examples demonstrate real-world applications  
-• Case studies provide context and validation of theories
-• Statistical data supports conclusions and recommendations
-• Best practices are outlined for implementation
-
-3. DETAILED ANALYSIS
-The document presents in-depth analysis of complex topics, breaking down intricate concepts into understandable components. Each section builds upon previous knowledge while introducing new perspectives and methodologies.
-
-4. RESEARCH METHODOLOGY
-The information presented follows rigorous research standards, incorporating:
-- Primary source materials
-- Peer-reviewed publications
-- Expert interviews and consultations
-- Empirical data collection and analysis
-- Comparative studies and benchmarking
-
-5. CONCLUSIONS AND RECOMMENDATIONS
-Based on comprehensive analysis, the document provides actionable recommendations for practical implementation. These suggestions are grounded in evidence-based research and proven methodologies.
-
-6. REFERENCES AND FURTHER READING
-Extensive bibliography and resource lists are provided for readers seeking additional information on specific topics covered in this document.
-
-TECHNICAL SPECIFICATIONS:
-- Document Name: ${fileData.name}
-- File Size: ${formatFileSize(fileData.size)}
-- Content Type: PDF Document
-- Processing Date: ${new Date().toLocaleDateString()}
-- Pages: Multiple sections with detailed content
-
-This mock content demonstrates how actual PDF text extraction would provide substantial, searchable content for AI-powered question answering and document analysis.`;
-
-        const { data: document, error: docError } = await supabase
-          .from('documents')
-          .insert({
-            notebook_id: notebook.id,
-            user_id: user.id,
+          return {
+            id: uploadResult.documentId,
             filename: fileData.name,
-            file_path: `/uploads/${user.id}/${notebook.id}/${fileData.name}`, // Mock path
-            file_size: fileData.size,
-            content_text: mockContent,
-            page_count: Math.floor(Math.random() * 50) + 10 // Mock page count 10-60
-          })
-          .select()
-          .single();
+            message: uploadResult.message
+          };
 
-        if (docError) {
-          console.error(`Error creating document ${fileData.name}:`, docError);
-          throw new Error(`Failed to create document: ${docError.message}`);
+        } catch (error) {
+          console.error(`Error processing document ${fileData.name}:`, error);
+          throw new Error(`Failed to process ${fileData.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-
-        return document;
       });
 
-      // Wait for all documents to be created
+      // Wait for all documents to be processed (including RAG embedding)
       const documents = await Promise.all(documentPromises);
-      console.log('Documents created:', documents);
+      console.log('Documents processed with RAG:', documents);
+
+      console.log(`Document Upload Summary:
+        - Documents: ${documents.length}
+        - Files processed: ${documents.map(d => d.filename).join(', ')}`);
+      
+      // Show success message
+      alert(`Successfully uploaded ${documents.length} document(s) to your notebook!`);
 
       // Step 3: Navigate to the created notebook
       router.push(`/notebook/${notebook.id}`);

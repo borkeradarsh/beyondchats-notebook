@@ -1,216 +1,196 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { createClient } from '@supabase/supabase-js';
+import jwt from 'jsonwebtoken';
 
+// Helper function to get user ID from request
+async function getUserIdFromRequest(request: NextRequest): Promise<string | null> {
+  try {
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return null;
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = jwt.decode(token) as { sub?: string } | null;
+    return decoded?.sub || null;
+  } catch (error) {
+    console.error('Error extracting user ID:', error);
+    return null;
+  }
+}
+
+// Initialize at module level like other working routes
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
-interface QuizQuestion {
-  id: string;
-  type: 'mcq' | 'saq' | 'laq';
-  question: string;
-  options?: string[];
-  correct_answer: string;
-  explanation: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+// --- Type Definitions ---
+interface DocumentChunk {
+  content: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+    const googleApiKey = process.env.GOOGLE_API_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey || !googleApiKey) {
+      throw new Error("Missing required environment variables.");
     }
-
-    const token = authHeader.split(' ')[1];
     
-    // Create Supabase client with auth header
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabaseClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      }
-    );
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-    if (authError || !user) {
+    // Get user ID from authentication
+    const userId = await getUserIdFromRequest(request);
+    if (!userId) {
+      console.log('No user ID found in request');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { notebookId, documentIds, questionCount = 5, types = ['mcq'] } = await request.json();
 
+    console.log('Quiz generation request:', { notebookId, documentIds, questionCount, types, userId });
+
     if (!notebookId || !documentIds || documentIds.length === 0) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+      return NextResponse.json({ error: 'NotebookId and documentIds are required.' }, { status: 400 });
     }
 
-    // Get document content
-    const { data: documents, error: docsError } = await supabaseClient
+    // First, let's check what documents are available for this user in this notebook
+    const { data: availableDocuments, error: availableDocsError } = await supabase
       .from('documents')
-      .select('content_text, filename')
-      .in('id', documentIds)
-      .eq('user_id', user.id)
-      .eq('notebook_id', notebookId);
+      .select('id, filename')
+      .eq('notebook_id', notebookId)
+      .eq('user_id', userId);
 
-    if (docsError || !documents || documents.length === 0) {
-      return NextResponse.json({ error: 'No documents found' }, { status: 404 });
+    console.log('Available documents:', { availableDocuments, availableDocsError });
+
+    // Use the first document for now (can be enhanced to combine multiple documents)
+    const documentId = documentIds[0];
+
+    // Get document metadata with user validation
+    const { data: documentData, error: docError } = await supabase
+      .from('documents')
+      .select('filename, notebook_id, user_id')
+      .eq('id', documentId)
+      .eq('user_id', userId)
+      .eq('notebook_id', notebookId)
+      .single();
+
+    console.log('Document fetch result:', { documentData: !!documentData, docError });
+
+    if (docError || !documentData) {
+      console.error('Document fetch error:', docError);
+      return NextResponse.json({ 
+        error: 'Document not found or access denied.', 
+        debug: { 
+          docError: docError?.message, 
+          documentId, 
+          userId, 
+          notebookId 
+        } 
+      }, { status: 404 });
     }
 
-    // Combine document content
-    const combinedContent = documents.map(doc => 
-      `Document: ${doc.filename}\n${doc.content_text}`
-    ).join('\n\n');
+    // Get document content from chunks table
+    const { data: chunks, error: chunksError } = await supabase
+      .from('document_chunks')
+      .select('content')
+      .eq('document_id', documentId)
+      .order('chunk_index', { ascending: true });
 
-    // Generate quiz questions using Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    console.log('Chunks fetch result:', { chunksCount: chunks?.length, chunksError });
 
-    const quizPrompt = `
-Based on the following document content, generate ${questionCount} educational quiz questions.
+    if (chunksError || !chunks || chunks.length === 0) {
+      return NextResponse.json({ 
+        error: 'Document content not found or not processed yet.',
+        debug: {
+          chunksError: chunksError?.message,
+          chunksCount: chunks?.length || 0
+        }
+      }, { status: 404 });
+    }
 
-Document Content:
-${combinedContent}
+    // Combine all chunks to form the complete document content
+    const context = chunks.map(chunk => chunk.content).join('\n\n');
+    
+    // Generate quiz based on requested type
+    const quizType = types[0]; // Use first type specified
+    let typePrompt = '';
+    
+    if (quizType === 'mcq') {
+      typePrompt = `Generate ${questionCount} Multiple Choice Questions. Each question should have 4 options and one correct answer.`;
+    } else if (quizType === 'saq') {
+      typePrompt = `Generate ${questionCount} Short Answer Questions. These should require brief, factual responses.`;
+    } else if (quizType === 'laq') {
+      typePrompt = `Generate ${questionCount} Long Answer Questions. These should require detailed explanations.`;
+    }
 
-Requirements:
-1. Generate a mix of question types: ${types.join(', ')}
-2. Include questions of varying difficulty levels (easy, medium, hard)
-3. For MCQ questions, provide 4 options with only one correct answer
-4. For SAQ (Short Answer Questions), expect 1-2 sentence answers
-5. For LAQ (Long Answer Questions), expect paragraph-length answers
-6. Include detailed explanations for all correct answers
-7. Focus on key concepts, main ideas, and important details from the documents
+    const prompt = `
+      You are an expert quiz creator for students. Based ONLY on the document content below, create educational questions.
 
-Return ONLY a valid JSON array of questions in this exact format:
-[
-  {
-    "id": "unique_id_1",
-    "type": "mcq",
-    "question": "Question text here?",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "correct_answer": "Exact correct option text",
-    "explanation": "Detailed explanation of why this is correct and what concept it tests",
-    "difficulty": "easy|medium|hard"
-  },
-  {
-    "id": "unique_id_2", 
-    "type": "saq",
-    "question": "Question text here?",
-    "correct_answer": "Expected short answer",
-    "explanation": "Explanation of the answer and concept",
-    "difficulty": "easy|medium|hard"
-  }
-]
+      ${typePrompt}
 
-Important: 
-- Make questions directly relevant to the document content
-- Ensure variety in topics covered
-- Use clear, educational language
-- Test understanding, not just memorization
-- Return ONLY the JSON array, no other text
-`;
+      Return a JSON object with a "questions" array. Each question should have:
+      - "type": "${quizType}"
+      - "question": The question text
+      ${quizType === 'mcq' ? '- "options": Array of exactly 4 strings' : ''}
+      - "correct_answer": The correct answer${quizType === 'mcq' ? ' (must exactly match one of the options)' : ''}
+      - "explanation": Brief explanation of the correct answer
+      - "difficulty": "easy", "medium", or "hard"
 
-    const result = await model.generateContent(quizPrompt);
-    const response = result.response;
+      Document: ${documentData.filename}
+      ---
+      ${context}
+      ---
+
+      Generate the quiz now as valid JSON.
+    `;
+
+    // Generate quiz using Gemini
+    const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const result = await generativeModel.generateContent(prompt);
+    const response = await result.response;
     const text = response.text();
-
+    
+    // Clean up the response to ensure it's valid JSON
+    const jsonResponse = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    let parsedResponse;
     try {
-      // Parse the JSON response
-      const questions: QuizQuestion[] = JSON.parse(text);
-      
-      // Validate and clean up the questions
-      const validQuestions = questions.filter(q => 
-        q.question && q.correct_answer && q.explanation && q.type && q.difficulty
-      ).map((q, index) => ({
-        ...q,
-        id: q.id || `question_${Date.now()}_${index}`
-      }));
-
-      if (validQuestions.length === 0) {
-        throw new Error('No valid questions generated');
-      }
-
-      return NextResponse.json({ 
-        questions: validQuestions,
-        message: `Generated ${validQuestions.length} quiz questions successfully`
-      });
-
+      parsedResponse = JSON.parse(jsonResponse);
     } catch (parseError) {
-      console.error('Failed to parse quiz questions:', parseError);
-      console.error('Raw AI response:', text);
-      console.error('Attempting to clean and re-parse...');
-      
-      // Try to extract JSON from the response if it's wrapped in code blocks
-      let cleanText = text.trim();
-      
-      // Remove markdown code block markers
-      if (cleanText.startsWith('```json')) {
-        cleanText = cleanText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-      } else if (cleanText.startsWith('```')) {
-        cleanText = cleanText.replace(/^```\s*/, '').replace(/\s*```$/, '');
-      }
-      
-      // Try to extract JSON array from cleaned text
-      const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        try {
-          const questions: QuizQuestion[] = JSON.parse(jsonMatch[0]);
-          const validQuestions = questions.filter(q => 
-            q.question && q.correct_answer && q.explanation && q.type && q.difficulty
-          ).map((q, index) => ({
-            ...q,
-            id: q.id || `question_${Date.now()}_${index}`
-          }));
-          
-          if (validQuestions.length > 0) {
-            return NextResponse.json({ 
-              questions: validQuestions,
-              message: `Generated ${validQuestions.length} quiz questions successfully (after cleanup)`
-            });
-          }
-        } catch (cleanupError) {
-          console.error('Cleanup parsing also failed:', cleanupError);
-        }
-      }
-      
-      // Fallback: create sample questions if parsing fails
-      const fallbackQuestions: QuizQuestion[] = [
-        {
-          id: `fallback_${Date.now()}_1`,
-          type: 'mcq',
-          question: 'Based on the documents, what is the main topic discussed?',
-          options: [
-            'Primary concept from the document',
-            'Secondary concept',
-            'Unrelated topic A',
-            'Unrelated topic B'
-          ],
-          correct_answer: 'Primary concept from the document',
-          explanation: 'This is the main focus of the provided documents based on the content analysis.',
-          difficulty: 'medium'
-        },
-        {
-          id: `fallback_${Date.now()}_2`,
-          type: 'saq',
-          question: 'Summarize the key takeaway from the documents in 1-2 sentences.',
-          correct_answer: 'The documents focus on important concepts that require understanding and application.',
-          explanation: 'A good summary should capture the essential information and main themes presented.',
-          difficulty: 'easy'
-        }
-      ];
-
-      return NextResponse.json({ 
-        questions: fallbackQuestions,
-        message: 'Generated fallback quiz questions due to parsing issues'
-      });
+      console.error('Failed to parse AI response:', text, parseError);
+      return NextResponse.json({ error: 'Failed to generate valid quiz format' }, { status: 500 });
     }
 
-  } catch (error) {
-    console.error('Quiz generation error:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate quiz questions' },
-      { status: 500 }
-    );
+    // Validate and format the response
+    if (!parsedResponse.questions || !Array.isArray(parsedResponse.questions)) {
+      return NextResponse.json({ error: 'Invalid quiz format generated' }, { status: 500 });
+    }
+
+    // Add unique IDs and ensure proper formatting
+    const formattedQuestions = parsedResponse.questions.map((q: unknown, index: number) => {
+      const question = q as Record<string, unknown>;
+      return {
+        id: `quiz_${Date.now()}_${index}`,
+        type: quizType,
+        question: (question.question as string) || '',
+        ...(quizType === 'mcq' && { options: (question.options as string[]) || [] }),
+        correct_answer: (question.correct_answer as string) || '',
+        explanation: (question.explanation as string) || '',
+        difficulty: (question.difficulty as string) || 'medium'
+      };
+    });
+
+    return NextResponse.json({ 
+      success: true,
+      questions: formattedQuestions
+    });
+
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
+    console.error('--- QUIZ API CRASH ---', errorMessage);
+    return NextResponse.json({ error: `Internal Server Error: ${errorMessage}` }, { status: 500 });
   }
 }
+
