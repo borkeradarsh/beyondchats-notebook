@@ -23,11 +23,6 @@ async function getUserIdFromRequest(request: NextRequest): Promise<string | null
 // Initialize at module level like other working routes
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
-// --- Type Definitions ---
-interface DocumentChunk {
-  content: string;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
