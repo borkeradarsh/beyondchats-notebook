@@ -1,6 +1,7 @@
 # BeyondChats Notebook 📚
 
-AI-powered document manage### 🛠️ Developer Experience
+AI-powered document assistant 
+*🛠️ Developer Experience
 - **🌱 Automatic Seeding**: New users get pre-loaded KEPH 107 educational content with document chunks and embeddings
 - **🔒 Type Safety**: Full TypeScript implementation with strict type checking
 - **🏗️ Modern Architecture**: Built with Next.js 15 App Router and latest React patterns
@@ -524,6 +525,6 @@ This application is **fully production-ready** with:
 [![GitHub stars](https://img.shields.io/github/stars/borkeradarsh/beyondchats-notebook?style=social)](https://github.com/borkeradarsh/beyondchats-notebook/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/borkeradarsh/beyondchats-notebook?style=social)](https://github.com/borkeradarsh/beyondchats-notebook/network/members)
 
-**🚀 [Live Demo](https://beyondchats-notebook-8jda.vercel.app/)** | **👨‍💻 [Developer](https://github.com/borkeradarsh)** | **📧 [Contact](mailto:your-email@example.com)**
+**🚀 [Live Demo](https://beyondchats-notebook-8jda.vercel.app/)** | **👨‍💻 [Developer](https://github.com/borkeradarsh)** | **📧 [Contact](mailto:borkeradi07@gmail.com)** | **[LinkedIN](https://www.linkedin.com/in/adarshborker04/)**
 
 </div>
