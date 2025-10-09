@@ -1,7 +1,7 @@
 // Script to help populate sample PDFs with real content
 // Run this script to update the sample data with actual PDF files
 
-import { sampleNotebooks } from './sampleData';
+import { sampleNotebooks, type SampleNotebook, type SampleDocument } from './sampleData';
 
 // Instructions for adding real PDF content:
 console.log(`
@@ -31,10 +31,10 @@ console.log(`
    - Update the sample data accordingly
 
 3. SAMPLE NOTEBOOKS INCLUDED:
-   ${sampleNotebooks.map((nb, i) => `
+   ${sampleNotebooks.map((nb: SampleNotebook, i: number) => `
    ${i + 1}. ${nb.title}
       - ${nb.documents.length} documents
-      - ${nb.documents.map(doc => doc.filename).join(', ')}`).join('')}
+      - ${nb.documents.map((doc: SampleDocument) => doc.filename).join(', ')}`).join('')}
 
 4. DATABASE STRUCTURE NEEDED:
    Make sure your Supabase database has these tables:
