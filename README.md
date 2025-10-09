@@ -1,6 +1,12 @@
 # BeyondChats Notebook 📚
 
-> An AI-powered document management platform that transforms how you interact with your PDFs. Upload, organize, and chat with your documents using advanced AI technology.
+AI-powered document manage### 🛠️ Developer Experience
+- **🌱 Automatic Seeding**: New users get pre-loaded KEPH 107 educational content with document chunks and embeddings
+- **🔒 Type Safety**: Full TypeScript implementation with strict type checking
+- **🏗️ Modern Architecture**: Built with Next.js 15 App Router and latest React patterns
+- **🚀 Production Ready**: Optimized for deployment with proper error handling and monitoring
+- **👤 Profile Management**: Automatic user profile creation with Google OAuth integration
+- **🔐 Row Level Security**: Comprehensive database security with Supabase RLS policiesplatform that transforms how you interact with your PDFs. Upload, organize, and chat with your documents using advanced AI technology.
 
 <div align="center">
 
@@ -22,10 +28,11 @@ BeyondChats Notebook revolutionizes document interaction by combining intelligen
 
 - **🤖 AI-Powered Conversations**: Chat naturally with your documents using Google's Gemini 2.0 Flash
 - **📚 Smart Organization**: Organize PDFs into themed notebooks with intuitive management
-- **🚀 Instant Setup**: New users get sample educational content automatically
+- **🌱 Automatic Setup**: New users get sample educational content automatically with full AI capabilities
 - **📱 Mobile-First Design**: Seamless experience across all devices
 - **⚡ Real-Time Processing**: Watch your documents come to life with live status updates
 - **🎨 Beautiful UI**: Modern interface with smooth animations and professional design
+- **� Secure Authentication**: Google OAuth integration with automatic profile management
 
 ## ✨ Features
 
@@ -79,11 +86,11 @@ BeyondChats Notebook revolutionizes document interaction by combining intelligen
 **Core Technologies:**
 - **Frontend**: Next.js 15.3.3, React 18, TypeScript 5.0
 - **Styling**: Tailwind CSS, Framer Motion animations, Lucide React icons
-- **Database**: Supabase (PostgreSQL) with real-time capabilities
-- **Authentication**: Supabase Auth with email/password
+- **Database**: Supabase (PostgreSQL) with real-time capabilities and Row Level Security
+- **Authentication**: Supabase Auth with Google OAuth and automatic profile creation
 - **PDF Processing**: Advanced text extraction with chunking algorithms
 - **AI Integration**: Google Gemini 2.0 Flash API with text-embedding-004
-- **Deployment**: Vercel with automatic deployments
+- **Deployment**: Vercel with automatic deployments and optimized performance
 
 ## 🔧 AI & Development Tools
 
@@ -136,9 +143,48 @@ GOOGLE_AI_API_KEY=your_google_ai_studio_api_key
 
 #### Option A: Using Supabase Dashboard (Recommended)
 1. Create a new Supabase project
-2. Run the following SQL in the SQL Editor:
+2. Go to **Authentication** → **Providers** → Enable **Google OAuth**
+3. Run the database setup script in the SQL Editor:
 
 ```sql
+-- Create profiles table (for user management)
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id uuid not null,
+  username text null,
+  avatar_url text null,
+  constraint profiles_pkey primary key (id),
+  constraint profiles_id_fkey foreign KEY (id) references auth.users (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+-- Enable Row Level Security for profiles
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for profiles table
+CREATE POLICY "Users can view own profile" ON profiles
+  FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON profiles
+  FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users can insert own profile" ON profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
+-- Create function to handle new user creation
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, username)
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'name', NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1))
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create trigger to automatically create profile for new users
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
 -- Create notebooks table
 CREATE TABLE notebooks (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -224,7 +270,7 @@ npm start
 | Feature | Description |
 |---------|-------------|
 | **📚 Notebook Overview** | Visual grid layout with animated cards |
-| **🌱 Auto Sample Data** | New users get KEPH 107 educational content |
+| **🌱 Automatic Setup** | New users get KEPH 107 educational content with AI-ready embeddings |
 | **➕ Quick Actions** | One-click notebook creation with intuitive flow |
 | **📊 Live Status** | Real-time document processing indicators |
 
@@ -260,17 +306,22 @@ beyondchats-notebook/
 │   ├── 📁 api/               # API routes
 │   │   ├── 📁 chat/          # AI chat endpoints
 │   │   ├── 📁 upload/        # PDF upload processing
+│   │   ├── 📁 seed/          # Automatic seeding endpoint
 │   │   └── 📁 documents/     # Document management
 │   ├── 📁 lib/               # Utilities and configurations
-│   │   ├── 📄 sampleData.ts  # Auto-seeding system with embeddings
+│   │   ├── 📄 autoSeeding.ts # Automatic seeding service for new users
 │   │   ├── 📄 supabase.ts    # Database client configuration
 │   │   └── 📄 gemini.ts      # Google AI integration
 │   ├── 📄 globals.css        # Global styles and Tailwind config
 │   └── 📄 layout.tsx         # Root layout with providers
 ├── 📁 public/                # Static assets and icons
-├── 📄 next.config.ts         # Next.js configuration
-├── 📄 tailwind.config.ts     # Tailwind CSS configuration
-└── 📄 tsconfig.json          # TypeScript configuration
+├── 📁 seed/                  # PDF files for automatic seeding
+│   ├── 📄 keph101.pdf       # Sample educational content
+│   └── 📄 keph102.pdf       # Sample educational content
+├── 📄 seed.js               # Manual PDF seeding script (optional)
+├── 📄 next.config.ts        # Next.js configuration
+├── 📄 tailwind.config.ts    # Tailwind CSS configuration
+└── 📄 tsconfig.json         # TypeScript configuration
 ```
 
 ### 🔧 Key Technical Features
@@ -289,9 +340,28 @@ beyondchats-notebook/
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/borkeradarsh/beyondchats-notebook)
 
 1. **Connect Repository**: Link your GitHub repo to Vercel
-2. **Environment Variables**: Add your `.env.local` variables in Vercel dashboard
-3. **Auto Deploy**: Automatic deployments on every git push
-4. **Performance**: Optimized edge functions and caching
+2. **Environment Variables**: Add your environment variables in Vercel dashboard:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   GOOGLE_AI_API_KEY=your_google_ai_studio_api_key
+   ```
+3. **Google OAuth Setup**: Configure OAuth redirect URLs in Google Console:
+   - Authorized redirect URIs: `https://your-project.vercel.app/auth/callback`
+4. **Auto Deploy**: Automatic deployments on every git push
+5. **Performance**: Optimized edge functions and caching
+
+### 🔧 Production Checklist
+
+Before deploying to production:
+
+- ✅ **Database Setup**: Run the complete SQL script in Supabase
+- ✅ **Environment Variables**: All required ENV vars configured
+- ✅ **Google OAuth**: OAuth providers enabled in Supabase Auth settings
+- ✅ **Google Console**: OAuth redirect URLs configured correctly
+- ✅ **PDF Seed Files**: Upload sample PDFs to the `seed/` directory
+- ✅ **Build Test**: Run `npm run build` locally to verify
+- ✅ **Type Check**: Ensure no TypeScript errors with `npm run type-check`
 
 ### 🐳 Docker Deployment
 
@@ -313,21 +383,39 @@ npm run build
 npm start
 ```
 
-## 🌱 Sample Data System
+## 🌱 Automatic User Onboarding System
 
-New users automatically receive curated educational content:
+New users get a complete, ready-to-use experience on their first login:
 
-### 📚 KEPH 107 - Fundamentals Collection
-- **📖 Comprehensive Guide**: 7 chapters covering health economics fundamentals
+### 📚 KEPH 107 - Welcome Collection
+- **📖 Comprehensive Guide**: Educational documents covering fundamental concepts
 - **🧠 AI-Ready Content**: Pre-processed with document chunks and embeddings
 - **💬 Instant Chat**: Ready for immediate AI conversations
 - **🎯 Educational Focus**: Real academic content for meaningful interactions
+- **⚡ Seamless Setup**: Happens automatically during first dashboard visit
 
-### ⚡ Technical Implementation
-- **Chunking Algorithm**: 500-character chunks with 50-character overlap
-- **Embedding Generation**: Google's text-embedding-004 model
+### 🔧 Technical Implementation
+- **Auto-Detection**: Detects new users with no existing notebooks
+- **Smart Processing**: Uses the same pipeline as manual uploads
+- **Chunking Algorithm**: 1500-character chunks with 200-character overlap
+- **Embedding Generation**: Google's text-embedding-004 model for semantic search
 - **Rate Limiting**: Built-in delays to respect API limits
 - **Error Handling**: Graceful fallbacks if seeding fails
+- **Progress Feedback**: Beautiful loading states with welcome messages
+
+### � User Experience
+When new users first log in, they see:
+1. **Welcome Message**: "Welcome to BeyondChats! 🎉"
+2. **Loading Animation**: Elegant progress indicators
+3. **Automatic Setup**: "We're setting up your first notebook with sample documents..."
+4. **Immediate Results**: Ready-to-use notebook with AI chat capability
+
+### �️ Developer Notes
+For developers who want to customize the seeding content:
+- **PDF Files**: Located in `seed/` folder (`keph101.pdf`, `keph102.pdf`)
+- **Service**: `app/lib/autoSeeding.ts` handles the seeding logic
+- **API Endpoint**: `/api/seed` triggers the seeding process
+- **Integration**: Dashboard automatically calls seeding for new users
 
 ## 📊 Performance & Monitoring
 
@@ -342,6 +430,13 @@ New users automatically receive curated educational content:
 - **🐛 Error Tracking**: Comprehensive error handling and logging
 - **📈 Usage Analytics**: Built-in performance tracking
 - **🔔 User Feedback**: Animated notifications for all actions
+
+### 🔐 Security Features
+- **🔒 Google OAuth**: Secure authentication with automatic profile creation
+- **🛡️ Row Level Security**: Database-level access control with Supabase RLS
+- **👤 Profile Management**: Automatic user profile creation and management
+- **🔑 Token Management**: Secure token handling with automatic cleanup
+- **🚫 CSRF Protection**: Built-in security against cross-site request forgery
 
 ## 🤝 Contributing
 
@@ -410,6 +505,19 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 ---
 
 <div align="center">
+
+## 🎉 Production Ready!
+
+This application is **fully production-ready** with:
+
+✅ **Complete Authentication System** - Google OAuth with automatic profile creation  
+✅ **Automatic User Onboarding** - New users get sample content with AI capabilities  
+✅ **Robust Database Architecture** - Row Level Security and proper schema design  
+✅ **AI-Powered Document Chat** - Google Gemini 2.0 Flash integration  
+✅ **Beautiful User Experience** - Smooth animations and responsive design  
+✅ **Comprehensive Error Handling** - Graceful fallbacks and user feedback  
+✅ **Type-Safe Codebase** - Full TypeScript implementation  
+✅ **Production Deployment** - Optimized for Vercel with proper monitoring  
 
 ### 🌟 Star this repo if it helped you!
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import Image from 'next/image';
 import { 
   Plus, 
   FileText,
@@ -11,8 +12,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/app/components/auth/AuthProvider';
 import { supabase } from '@/app/lib/supabase';
+import { getCurrentProfile, Profile } from '@/app/lib/profiles';
 import { Button } from '@/app/components/ui/button';
-import { shouldSeedSampleData, seedSampleNotebooks } from '@/app/lib/sampleData';
 
 interface Notebook {
   id: string;
@@ -30,6 +31,8 @@ export default function DashboardPage() {
 
   const [recentNotebooks, setRecentNotebooks] = useState<Notebook[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -37,27 +40,69 @@ export default function DashboardPage() {
     }
   }, [user, loading, router]);
 
+  // Auto-seeding function for new users
+  const performAutoSeeding = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      setIsSeeding(true);
+      console.log('🌱 Starting automatic seeding for new user...');
+
+      // Get current session for auth token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.error('No session found for auto-seeding');
+        return;
+      }
+
+      // Call the seeding API
+      const response = await fetch('/api/seed', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log(`✅ Auto-seeding successful: ${result.documentsCreated} documents created`);
+        
+        // Refresh notebooks to show the new seeded content
+        setTimeout(async () => {
+          try {
+            const { data } = await supabase
+              .from('notebooks')
+              .select('*')
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false });
+            
+            setRecentNotebooks(data || []);
+          } catch (error) {
+            console.error('Error refreshing notebooks after seeding:', error);
+          }
+        }, 1000);
+      } else {
+        console.error('Auto-seeding failed:', result.error);
+        // Set empty state if seeding fails
+        setRecentNotebooks([]);
+      }
+    } catch (error) {
+      console.error('Error during auto-seeding:', error);
+      setRecentNotebooks([]);
+    } finally {
+      setIsSeeding(false);
+    }
+  }, [user]);
+
   const fetchNotebooks = useCallback(async () => {
     if (!user) return;
 
     try {
       setDashboardLoading(true);
       
-      // Check if user needs sample data first
-      const needsSampleData = await shouldSeedSampleData(supabase, user.id);
-      
-      if (needsSampleData) {
-        console.log('🌱 New user detected, creating sample notebooks...');
-        try {
-          await seedSampleNotebooks(supabase, user.id);
-          console.log('✅ Sample notebooks created successfully');
-        } catch (seedError) {
-          console.error('❌ Error creating sample notebooks:', seedError);
-          // Continue anyway - we'll still show the empty state if needed
-        }
-      }
-      
-      // Fetch notebooks from database (including any newly created samples)
+      // Fetch notebooks from database
       const { data, error } = await supabase
         .from('notebooks')
         .select('*')
@@ -67,11 +112,16 @@ export default function DashboardPage() {
       if (error) throw error;
 
       const allNotebooks = data || [];
-      setRecentNotebooks(allNotebooks);
       
-      if (needsSampleData && allNotebooks.length > 0) {
-        console.log(`📚 Loaded ${allNotebooks.length} notebooks (including samples)`);
+      // Check if this is a new user with no notebooks - trigger auto-seeding
+      if (allNotebooks.length === 0) {
+        console.log('New user detected - starting automatic seeding...');
+        await performAutoSeeding();
+      } else {
+        setRecentNotebooks(allNotebooks);
+        console.log(`📚 Loaded ${allNotebooks.length} notebooks`);
       }
+      
     } catch (error) {
       console.error('Error fetching notebooks:', error);
       // Show empty state on error
@@ -79,11 +129,23 @@ export default function DashboardPage() {
     } finally {
       setDashboardLoading(false);
     }
+  }, [user, performAutoSeeding]);
+
+  const loadProfile = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const userProfile = await getCurrentProfile();
+      setProfile(userProfile);
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
   }, [user]);
 
   useEffect(() => {
     fetchNotebooks();
-  }, [fetchNotebooks]);
+    loadProfile();
+  }, [fetchNotebooks, loadProfile]);
 
   const createNotebook = async () => {
     // Navigate to create new notebook page
@@ -210,11 +272,21 @@ export default function DashboardPage() {
                 <div className="flex items-center space-x-3 text-gray-400">
                   {/* User Info */}
                   <div className="flex items-center space-x-2">
-                    <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                      {user?.email?.[0]?.toUpperCase() || 'U'}
+                    <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-white font-semibold text-sm overflow-hidden">
+                      {profile?.avatar_url ? (
+                        <Image 
+                          src={profile.avatar_url} 
+                          alt="Profile" 
+                          width={32}
+                          height={32}
+                          className="w-full h-full object-cover rounded-full"
+                        />
+                      ) : (
+                        (profile?.username?.[0] || user?.email?.[0])?.toUpperCase() || 'U'
+                      )}
                     </div>
                     <span className="text-sm text-gray-300 hidden sm:block">
-                      {user?.email?.split('@')[0] || 'User'}
+                      {profile?.username || user?.email?.split('@')[0] || 'User'}
                     </span>
                   </div>
                   
@@ -243,34 +315,51 @@ export default function DashboardPage() {
           </div>
 
           {dashboardLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              {[...Array(4)].map((_, index) => (
-                <div key={index} className="animate-pulse">
-                  <div className="bg-slate-800/50 rounded-2xl h-48 flex flex-col justify-between p-6">
-                    <div className="space-y-3">
-                      <div className="h-4 bg-slate-700 rounded w-3/4"></div>
-                      <div className="space-y-2">
-                        <div className="h-3 bg-slate-700 rounded"></div>
-                        <div className="h-3 bg-slate-700 rounded w-5/6"></div>
-                      </div>
-                    </div>
-                    <div className="h-3 bg-slate-700 rounded w-1/2"></div>
-                  </div>
+            isSeeding ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                  <FileText className="w-8 h-8 text-white" />
                 </div>
-              ))}
-            </div>
+                <h3 className="text-white font-medium mb-2">Welcome to BeyondChats! 🎉</h3>
+                <p className="text-gray-400 text-sm mb-4">
+                  We&apos;re setting up your first notebook with sample documents...
+                </p>
+                <div className="flex items-center justify-center space-x-2 text-purple-400">
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                {[...Array(4)].map((_, index) => (
+                  <div key={index} className="animate-pulse">
+                    <div className="bg-slate-800/50 rounded-2xl h-48 flex flex-col justify-between p-6">
+                      <div className="space-y-3">
+                        <div className="h-4 bg-slate-700 rounded w-3/4"></div>
+                        <div className="space-y-2">
+                          <div className="h-3 bg-slate-700 rounded"></div>
+                          <div className="h-3 bg-slate-700 rounded w-5/6"></div>
+                        </div>
+                      </div>
+                      <div className="h-3 bg-slate-700 rounded w-1/2"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           ) : recentNotebooks.length === 0 ? (
             <div className="text-center py-12">
               <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
                 <FileText className="w-8 h-8 text-slate-600" />
               </div>
-              <h3 className="text-white font-medium mb-2">Setting up your workspace</h3>
+              <h3 className="text-white font-medium mb-2">No notebooks yet</h3>
               <p className="text-gray-400 text-sm mb-6">
-                We&apos;re creating some sample notebooks for you to explore...
+                Create your first notebook to get started with AI-powered document chat.
               </p>
               <Button onClick={createNotebook} className="bg-white text-slate-950 hover:bg-gray-100">
                 <Plus className="w-4 h-4 mr-2" />
-                Or create your own notebook
+                Create your first notebook
               </Button>
             </div>
           ) : (

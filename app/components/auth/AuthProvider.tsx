@@ -45,6 +45,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+        
+        // Clean up URL hash after successful authentication
+        if (event === 'SIGNED_IN' && window.location.hash) {
+          // Remove the hash from URL without triggering a page reload
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
       }
     );
 
