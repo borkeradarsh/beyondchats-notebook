@@ -2,23 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize clients at module level like the working quiz route
+// Initialize AI at module level but defer Supabase client creation
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!
-);
-
-// --- Type Definitions ---
-interface DocumentChunk {
-  content: string;
-  page_number: number;
-  filename: string;
-  similarity: number;
-}
 
 export async function POST(request: NextRequest) {
   try {
+    // Create Supabase client inside the function to avoid build-time issues
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { message: question, selectedDocuments } = await request.json();
     
@@ -47,7 +44,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ answer: "I'm sorry, I couldn't find any relevant information in the selected document to answer your question." });
     }
 
-    const typedDocuments = documents as DocumentChunk[];
+    const typedDocuments = documents as Array<{
+      content: string;
+      page_number: number;
+      filename: string;
+      similarity: number;
+    }>;
     const context = typedDocuments.map(doc => `Source: ${doc.filename}, Page: ${doc.page_number}\nContent: ${doc.content}`).join('\n\n---\n\n');
     
     const prompt = `
