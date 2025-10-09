@@ -110,6 +110,49 @@ export async function POST(request: NextRequest) {
 
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     
+    // Upload the actual PDF file to Supabase Storage
+    console.log("Uploading PDF file to Supabase Storage...");
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${document.id}.${fileExt}`;
+    const filePath = `${userId}/${fileName}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(filePath, fileBuffer, {
+        contentType: file.type,
+        upsert: false,
+        cacheControl: '3600',
+        metadata: {
+          documentId: document.id,
+          originalFilename: file.name,
+          uploadedBy: userId,
+          uploadedAt: new Date().toISOString()
+        }
+      });
+
+    if (uploadError) {
+      console.error('Error uploading file to storage:', uploadError);
+      // Clean up the document record if file upload fails
+      await supabase.from('documents').delete().eq('id', document.id);
+      throw new Error(`File upload failed: ${uploadError.message}`);
+    }
+
+    console.log(`File uploaded successfully to: ${uploadData.path}`);
+    
+    // Update document record with storage path
+    const { error: updateError } = await supabase
+      .from('documents')
+      .update({ 
+        storage_path: uploadData.path,
+        file_size: fileBuffer.length
+      })
+      .eq('id', document.id);
+
+    if (updateError) {
+      console.error('Error updating document with storage path:', updateError);
+      // Don't fail the entire operation, just log the error
+    }
+    
     console.log("Starting PDF parsing with pdfreader...");
     const pageTexts = await parsePdfByPage(fileBuffer);
     const numPages = pageTexts.length;
@@ -159,7 +202,9 @@ export async function POST(request: NextRequest) {
       documentId: document.id,
       success: true,
       chunksCreated: documentsToInsert.length,
-      pageCount: numPages
+      pageCount: numPages,
+      storagePath: uploadData.path,
+      fileSize: fileBuffer.length
     });
 
   } catch (error) {

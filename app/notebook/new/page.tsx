@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Upload, 
   FileText,
   ArrowLeft,
   Plus,
-  X
+  X,
+  CheckCircle
 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { useAuth } from '@/app/components/auth/AuthProvider';
@@ -27,6 +28,8 @@ export default function NewNotebookPage() {
   const [notebookTitle, setNotebookTitle] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -140,11 +143,19 @@ export default function NewNotebookPage() {
         - Documents: ${documents.length}
         - Files processed: ${documents.map(d => d.filename).join(', ')}`);
       
-      // Show success message
-      alert(`Successfully uploaded ${documents.length} document(s) to your notebook!`);
+      // Show success popup
+      setSuccessMessage(`Successfully uploaded ${documents.length} document(s) to your notebook!`);
+      setShowSuccessPopup(true);
+      
+      // Auto-hide popup after 3 seconds
+      setTimeout(() => {
+        setShowSuccessPopup(false);
+      }, 3000);
 
-      // Step 3: Navigate to the created notebook
-      router.push(`/notebook/${notebook.id}`);
+      // Step 3: Navigate to the created notebook after a brief delay
+      setTimeout(() => {
+        router.push(`/notebook/${notebook.id}`);
+      }, 1500);
       
     } catch (error) {
       console.error('Error creating notebook:', error);
@@ -297,6 +308,42 @@ export default function NewNotebookPage() {
           </div>
         </div>
       </main>
+
+      {/* Success Popup */}
+      <AnimatePresence>
+        {showSuccessPopup && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -50, scale: 0.9 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="fixed top-6 right-6 z-50 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-4 rounded-2xl shadow-2xl shadow-green-500/25 border border-green-400/20 backdrop-blur-sm"
+          >
+            <div className="flex items-center space-x-3">
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ duration: 0.5, delay: 0.1 }}
+                className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center"
+              >
+                <CheckCircle className="w-4 h-4 text-white" />
+              </motion.div>
+              <div>
+                <p className="font-semibold text-sm">{successMessage}</p>
+                <p className="text-xs text-green-100 mt-1">Redirecting to your notebook...</p>
+              </div>
+            </div>
+            
+            {/* Progress bar */}
+            <motion.div
+              initial={{ width: "100%" }}
+              animate={{ width: "0%" }}
+              transition={{ duration: 3, ease: "linear" }}
+              className="absolute bottom-0 left-0 h-1 bg-white/30 rounded-b-2xl"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

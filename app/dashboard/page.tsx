@@ -16,6 +16,7 @@ import { useAuth } from '@/app/components/auth/AuthProvider';
 import { supabase } from '@/app/lib/supabase';
 import { Button } from '@/app/components/ui/button';
 import { cn } from '@/app/lib/utils';
+import { shouldSeedSampleData, seedSampleNotebooks } from '@/app/lib/sampleData';
 
 interface Notebook {
   id: string;
@@ -47,7 +48,21 @@ export default function DashboardPage() {
     try {
       setDashboardLoading(true);
       
-      // Fetch notebooks from database
+      // Check if user needs sample data first
+      const needsSampleData = await shouldSeedSampleData(supabase, user.id);
+      
+      if (needsSampleData) {
+        console.log('🌱 New user detected, creating sample notebooks...');
+        try {
+          await seedSampleNotebooks(supabase, user.id);
+          console.log('✅ Sample notebooks created successfully');
+        } catch (seedError) {
+          console.error('❌ Error creating sample notebooks:', seedError);
+          // Continue anyway - we'll still show the empty state if needed
+        }
+      }
+      
+      // Fetch notebooks from database (including any newly created samples)
       const { data, error } = await supabase
         .from('notebooks')
         .select('*')
@@ -57,9 +72,11 @@ export default function DashboardPage() {
       if (error) throw error;
 
       const allNotebooks = data || [];
-      
-      // Just show real notebooks from database (empty initially)
       setRecentNotebooks(allNotebooks);
+      
+      if (needsSampleData && allNotebooks.length > 0) {
+        console.log(`📚 Loaded ${allNotebooks.length} notebooks (including samples)`);
+      }
     } catch (error) {
       console.error('Error fetching notebooks:', error);
       // Show empty state on error
@@ -180,35 +197,9 @@ export default function DashboardPage() {
               <h1 className="text-xl font-bold text-white">BeyondChats</h1>
             </div>
 
-
             {/* Right side */}
             <div className="flex items-center space-x-4">
               {/* View toggle */}
-              <div className="flex items-center space-x-1 bg-slate-800 rounded-lg p-1">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('grid')}
-                  className={cn(
-                    "p-1.5 rounded-md transition-colors",
-                    viewMode === 'grid' ? 'bg-slate-700 text-white' : 'text-gray-400 hover:text-white'
-                  )}
-                >
-                  <Grid3X3 className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('list')}
-                  className={cn(
-                    "p-1.5 rounded-md transition-colors",
-                    viewMode === 'list' ? 'bg-slate-700 text-white' : 'text-gray-400 hover:text-white'
-                  )}
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
-
-
-
 
               {/* Create button */}
               <Button 
@@ -221,18 +212,26 @@ export default function DashboardPage() {
 
               {/* User menu */}
               <div className="flex items-center space-x-2">
-                <button type="button" className="p-2 text-gray-400 hover:text-white transition-colors">
-                  <Settings className="w-5 h-5" />
-                </button>
-                <div className="flex items-center space-x-2 text-gray-400">
-                  <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded-full">PRO</span>
-                  <button 
-                    type="button"
+                <div className="flex items-center space-x-3 text-gray-400">
+                  {/* User Info */}
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                      {user?.email?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                    <span className="text-sm text-gray-300 hidden sm:block">
+                      {user?.email?.split('@')[0] || 'User'}
+                    </span>
+                  </div>
+                  
+                  {/* Sign Out Button */}
+                  <Button
                     onClick={signOut}
-                    className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white font-semibold text-sm"
+                    variant="outline"
+                    size="sm"
+                    className="bg-transparent border-red-500/50 text-red-400 hover:bg-red-500/10 hover:border-red-400 hover:text-red-300 transition-all duration-200"
                   >
-                    {user?.email?.[0]?.toUpperCase() || 'U'}
-                  </button>
+                    Sign Out
+                  </Button>
                 </div>
               </div>
             </div>
@@ -270,13 +269,13 @@ export default function DashboardPage() {
               <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
                 <FileText className="w-8 h-8 text-slate-600" />
               </div>
-              <h3 className="text-white font-medium mb-2">No notebooks yet</h3>
+              <h3 className="text-white font-medium mb-2">Setting up your workspace</h3>
               <p className="text-gray-400 text-sm mb-6">
-                Your textbooks are being loaded. This may take a moment...
+                We&apos;re creating some sample notebooks for you to explore...
               </p>
               <Button onClick={createNotebook} className="bg-white text-slate-950 hover:bg-gray-100">
                 <Plus className="w-4 h-4 mr-2" />
-                Create your first notebook
+                Or create your own notebook
               </Button>
             </div>
           ) : (

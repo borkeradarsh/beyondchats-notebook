@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "migrate:page-numbers": "node --experimental-modules migrations/apply_page_number_migration.js"
+    "migrate:page-numbers": "node --experimental-modules migrations/apply_page_number_migration.js",
+    "postinstall": "node -e \"const fs=require('fs'); const path=require('path'); try { fs.copyFileSync(path.join('node_modules','pdfjs-dist','build','pdf.worker.min.mjs'), path.join('public','pdf.worker.min.js')); console.log('PDF worker copied successfully'); } catch(e) { console.warn('Failed to copy PDF worker:', e.message); }\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -39,7 +40,7 @@
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.8",
     "react-hook-form": "^7.64.0",
-    "react-pdf": "^10.1.0",
+    "react-pdf": "^10.2.0",
     "recharts": "^3.2.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
@@ -54,6 +55,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.3.3",
+    "pdfjs-dist": "^5.4.296",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
