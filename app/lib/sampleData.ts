@@ -162,11 +162,14 @@ export async function createSampleNotebook(
         title: sampleNotebook.title,
         description: sampleNotebook.description,
         user_id: userId,
+        source_count: 0, // Initialize to 0, will update after documents
       })
       .select()
       .single();
 
     if (notebookError) throw notebookError;
+
+    let documentCount = 0;
 
     // Step 2: Create documents with chunks and embeddings
     for (const doc of sampleNotebook.documents) {
@@ -192,13 +195,25 @@ export async function createSampleNotebook(
       console.log(`🔍 Creating chunks for: ${doc.filename}`);
       const chunks = chunkText(doc.content_text);
       
+      if (chunks.length === 0) {
+        console.warn(`⚠️ No chunks generated for ${doc.filename}`);
+        continue;
+      }
+
+      let chunksCreated = 0;
+      
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         
         try {
           // Generate embedding for this chunk
-          console.log(`🧠 Generating embedding for chunk ${i + 1}/${chunks.length}`);
+          console.log(`🧠 Generating embedding for chunk ${i + 1}/${chunks.length} of ${doc.filename}`);
           const embedding = await generateEmbedding(chunk);
+
+          if (!embedding || embedding.length === 0) {
+            console.error(`❌ Empty embedding received for chunk ${i + 1}`);
+            continue;
+          }
 
           // Insert chunk with embedding
           const { error: chunkError } = await supabase
@@ -215,6 +230,8 @@ export async function createSampleNotebook(
             throw chunkError;
           }
           
+          chunksCreated++;
+          
           // Small delay to avoid rate limiting
           await new Promise(resolve => setTimeout(resolve, 100));
         } catch (embeddingError) {
@@ -223,11 +240,22 @@ export async function createSampleNotebook(
         }
       }
 
-      console.log(`✅ Created ${chunks.length} chunks for ${doc.filename}`);
+      console.log(`✅ Created ${chunksCreated} chunks for ${doc.filename}`);
+      documentCount++;
     }
 
-    console.log(`✅ Successfully created sample notebook: ${sampleNotebook.title}`);
-    return notebook;
+    // Step 4: Update notebook source_count
+    const { error: updateError } = await supabase
+      .from('notebooks')
+      .update({ source_count: documentCount })
+      .eq('id', notebook.id);
+
+    if (updateError) {
+      console.error('❌ Error updating notebook source count:', updateError);
+    }
+
+    console.log(`✅ Successfully created sample notebook: ${sampleNotebook.title} with ${documentCount} documents`);
+    return { ...notebook, source_count: documentCount };
   } catch (error) {
     console.error(`❌ Error creating sample notebook ${sampleNotebook.title}:`, error);
     throw error;
