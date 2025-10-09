@@ -64,9 +64,17 @@ async function seedUserByEmail(email: string) {
   try {
     console.log(`🎯 Seeding sample data for user: ${email}`);
     
-    const { data: user, error: userError } = await supabase.auth.admin.getUserByEmail(email);
+    // Get user by email using list users API
+    const { data: { users }, error: userError } = await supabase.auth.admin.listUsers();
     
-    if (userError || !user) {
+    if (userError) {
+      console.error(`❌ Error fetching users:`, userError);
+      return;
+    }
+    
+    const user = users.find(u => u.email === email);
+    
+    if (!user) {
       console.error(`❌ User not found: ${email}`);
       return;
     }

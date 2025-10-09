@@ -5,9 +5,6 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
   Plus, 
-  Grid3X3, 
-  List, 
-  Settings, 
   FileText,
   Globe,
   TrendingUp
@@ -15,7 +12,6 @@ import {
 import { useAuth } from '@/app/components/auth/AuthProvider';
 import { supabase } from '@/app/lib/supabase';
 import { Button } from '@/app/components/ui/button';
-import { cn } from '@/app/lib/utils';
 import { shouldSeedSampleData, seedSampleNotebooks } from '@/app/lib/sampleData';
 
 interface Notebook {
@@ -34,7 +30,6 @@ export default function DashboardPage() {
 
   const [recentNotebooks, setRecentNotebooks] = useState<Notebook[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   useEffect(() => {
     if (!loading && !user) {

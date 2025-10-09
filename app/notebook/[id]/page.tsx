@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/app/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, FileText, ChevronLeft, MessageSquare, BookOpen, BarChart3, Play, Download, Share, Settings, Clock, Plus, Upload, CheckCircle, XCircle, Trophy, TrendingUp, Star, Video, Search, ExternalLink, X } from 'lucide-react';
+import { Send, FileText, ChevronLeft, MessageSquare, BookOpen, BarChart3, Play, Clock, Plus, Upload, CheckCircle, XCircle, ExternalLink, X } from 'lucide-react';
 import { redirect } from 'next/navigation';
 import dynamic from 'next/dynamic';
 
@@ -171,7 +171,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
 
   const [userAnswers, setUserAnswers] = useState<{[key: string]: string}>({});
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
-  const [quizScore, setQuizScore] = useState({ correct: 0, total: 0 });
   const [isSubmittingQuiz, setIsSubmittingQuiz] = useState(false);
   const [quizResults, setQuizResults] = useState<{[key: string]: {isCorrect: boolean, explanation: string}} | null>(null);
   const [showResults, setShowResults] = useState(false);
@@ -717,7 +716,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
       if (data.questions) {
         setQuizQuestions(data.questions);
         setUserAnswers({});
-        setQuizScore({ correct: 0, total: 0 });
         // Clear previous quiz results and submission state
         setQuizResults(null);
         setShowResults(false);
@@ -895,7 +893,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         const totalQuestions = quizQuestions.length;
         const score = Math.round((correctCount / totalQuestions) * 100);
         
-        setQuizScore({ correct: correctCount, total: totalQuestions });
         setShowResults(true);
         
         // Save progress to tracking API
